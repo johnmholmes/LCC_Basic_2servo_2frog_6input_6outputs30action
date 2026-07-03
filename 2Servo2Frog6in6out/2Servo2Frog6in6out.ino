@@ -53,16 +53,27 @@ const char configDefInfo[] PROGMEM =
         <eventid><name>Servo Passed Midpoint Moving to Closed (Frog Relay)</name></eventid>
     </group>
     <group replication=')" N(NUM_INPUTS) R"('>
-        <name>Inputs</name>
-        <repname>Input Pin D16</repname>
-        <repname>Input Pin D17</repname>
-        <repname>Input Pin D5</repname>
-        <repname>Input Pin D18</repname>
-        <repname>Input Pin D19</repname>
-        <repname>Input Pin D21</repname>
+        <name>Inputs Using INPUT_PULLUP To Hold The Pin HIGH 3.3 Volts.</name>
+        <repname>Pin D16 </repname>
+        <repname>Pin D17 </repname>
+        <repname>Pin D5 </repname>
+        <repname>Pin D18 </repname>
+        <repname>Pin D19 </repname>
+        <repname>Pin D21 </repname>
         <string size='24'><name>Input Description / Location</name></string>
-        <eventid><name>Input HIGH State Event</name></eventid>
-        <eventid><name>Input LOW State Event</name></eventid>
+        
+        <int size='1'>
+            <name>Input Operating Mode</name>
+            <description>Select how physical pin changes trigger the Event IDs.</description>
+            <min>0</min><max>1</max>
+            <map>
+                <relation><property>0</property><value>Direct State Tracking (Momentary/Toggle Sw)</value></relation>
+                <relation><property>1</property><value>Pushbutton Toggle Algorithm</value></relation>
+            </map>
+        </int>
+
+        <eventid><name>Input Transited HIGH Event (or Toggle OFF)</name></eventid>
+        <eventid><name>Input Transited LOW Event (or Toggle ON)</name></eventid>
     </group>
     )" CDIfooter;
 } 
@@ -88,9 +99,10 @@ typedef struct {
         
       } servos[NUM_SERVOS];
 
-      // Input structures mapped directly following the Servos segment
+      // Input structures mapped following the Servos segment
       struct {
-        char desc[24]; // Added description variable text block here
+        char desc[24]; 
+        uint8_t mode; // 0 = Direct State, 1 = Pushbutton Toggle Algorithm
         EventID highStateEid;
         EventID lowStateEid;
       } inputs[NUM_INPUTS];
@@ -105,8 +117,9 @@ uint8_t curpos[NUM_SERVOS];
 bool servoMoving[NUM_SERVOS] = {false, false};
 bool midCrossed[NUM_SERVOS] = {false, false}; 
 
-// Track physical inputs
+// Track physical inputs and virtual states
 bool lastInputState[NUM_INPUTS] = {HIGH, HIGH, HIGH, HIGH, HIGH, HIGH};
+bool virtualToggleState[NUM_INPUTS] = {false, false, false, false, false, false}; 
 
 // Array to easily map hardware frog pins to loop index tracking
 const uint8_t frogPins[NUM_SERVOS] = { FROG_PIN_0, FROG_PIN_1 };
@@ -162,7 +175,7 @@ bool posdirty = false;
 void servoSet(); 
 
 void reportConfig() {
-  dP("\n 2Servo Turnout with Frog Midpoint Events and 6 Discrete Inputs");
+  dP("\n 2Servo Turnout with Frog Midpoint Events and 6 Configurable Inputs");
   dP("\nFile: " __FILE__);
   dP("\nUsing " BOARD);
   dP("\nNode ID="); dP(TOSTRING((NODE_ADDRESS)));
@@ -185,9 +198,10 @@ void userInitAll()
     }
   }
 
-  // Clear discrete input description strings in EEPROM
+  // Clear input settings in EEPROM
   for(uint8_t i = 0; i < NUM_INPUTS; i++) {
     NODECONFIG.put(EEADDR(inputs[i].desc), ESTRING(""));
+    NODECONFIG.update(EEADDR(inputs[i].mode), 0); // Default mode: Direct tracking
   }
   
   EEPROMcommit;
@@ -196,7 +210,6 @@ void userInitAll()
 enum evStates { VALID=4, INVALID=5, UNKNOWN=7 };
 
 uint8_t userState(uint16_t index) {
-    // Check if the event index belongs to the Servos
     if (index < (NUM_SERVOS * 7)) {
         int ch = index / 7; 
         int localIndex = index % 7;
@@ -212,14 +225,21 @@ uint8_t userState(uint16_t index) {
         }
         return INVALID;
     } 
-    // Handle state evaluation for the 6 additional digital inputs
     else if (index < NUM_EVENT) {
         int inputIdx = (index - (NUM_SERVOS * 7)) / 2;
         int stateType = (index - (NUM_SERVOS * 7)) % 2; // 0 = HIGH event, 1 = LOW event
         
-        bool reading = digitalRead(inputPins[inputIdx]);
-        if (stateType == 0 && reading == HIGH) return VALID;
-        if (stateType == 1 && reading == LOW) return VALID;
+        uint8_t operationalMode = NODECONFIG.read(EEADDR(inputs[inputIdx].mode));
+
+        if (operationalMode == 0) {
+            bool reading = digitalRead(inputPins[inputIdx]);
+            if (stateType == 0 && reading == HIGH) return VALID;
+            if (stateType == 1 && reading == LOW) return VALID;
+        } else {
+            bool trackingState = virtualToggleState[inputIdx];
+            if (stateType == 0 && trackingState == false) return VALID; 
+            if (stateType == 1 && trackingState == true) return VALID;  
+        }
         return INVALID;
     }
     
@@ -363,10 +383,10 @@ void servoBackgroundTask(void * parameter) {
   }
 }
 
-// Background task checking hardware pullups & producing layout events
+// Background task checking hardware pullups & handling chosen operating algorithm
 void inputBackgroundTask(void * parameter) {
   for(;;) {
-    vTaskDelay(pdMS_TO_TICKS(30)); // 30ms polling interval behaves safely as a software debounce
+    vTaskDelay(pdMS_TO_TICKS(30)); 
     
     for(int i = 0; i < NUM_INPUTS; i++) {
       bool currentState = digitalRead(inputPins[i]);
@@ -374,15 +394,30 @@ void inputBackgroundTask(void * parameter) {
       if(currentState != lastInputState[i]) {
         lastInputState[i] = currentState;
         
-        // Calculate where this dynamic index begins in the OpenLCB pool
+        uint8_t operationalMode = NODECONFIG.read(EEADDR(inputs[i].mode));
         uint16_t inputBaseIndex = (NUM_SERVOS * 7) + (i * 2);
-        
-        if(currentState == HIGH) {
-          OpenLcb.produce(inputBaseIndex); // Index for HIGH State Event
-          dP("\n Input #"); dP(i); dP(" changed to HIGH.");
-        } else {
-          OpenLcb.produce(inputBaseIndex + 1); // Index for LOW State Event
-          dP("\n Input #"); dP(i); dP(" changed to LOW.");
+
+        if (operationalMode == 0) {
+          if(currentState == HIGH) {
+            OpenLcb.produce(inputBaseIndex); 
+            dP("\n Input #"); dP(i); dP(" Direct Mode -> HIGH");
+          } else {
+            OpenLcb.produce(inputBaseIndex + 1); 
+            dP("\n Input #"); dP(i); dP(" Direct Mode -> LOW");
+          }
+        } 
+        else {
+          if(currentState == LOW) {
+            virtualToggleState[i] = !virtualToggleState[i]; 
+            
+            if(virtualToggleState[i] == true) {
+              OpenLcb.produce(inputBaseIndex + 1); 
+              dP("\n Input #"); dP(i); dP(" Toggle Mode -> Virtual ON");
+            } else {
+              OpenLcb.produce(inputBaseIndex); 
+              dP("\n Input #"); dP(i); dP(" Toggle Mode -> Virtual OFF");
+            }
+          }
         }
       }
     }
@@ -425,7 +460,7 @@ void setup()
   // Initialize the 6 hardware inputs with custom internal Pullups
   for(int i = 0; i < NUM_INPUTS; i++) {
     pinMode(inputPins[i], INPUT_PULLUP);
-    lastInputState[i] = digitalRead(inputPins[i]); // Read active level at start up
+    lastInputState[i] = digitalRead(inputPins[i]); 
   }
 
   EEPROMbegin;

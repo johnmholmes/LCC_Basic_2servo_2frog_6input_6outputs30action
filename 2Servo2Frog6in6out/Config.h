@@ -10,6 +10,9 @@
 // Choose a board, uncomment one line, see boards.h
 #define ESP32_BOARD
 
+/* Debugging -- uncomment to activate debugging statements: */
+//#define DEBUG Serial
+
 /*
   Altering the number of servos require changes made to the Boards.h for pin allocations.
 */
@@ -21,7 +24,7 @@
 #define MANU " OpenLCB "              // The manufacturer of node
 #define MODEL BOARD " 2Servo6in6out "        // The default model of the board
 #define HWVERSION " ESP 1 Basic "     // Hardware version
-#define SWVERSION " 1.0.3 "           // Software version
+#define SWVERSION " 1.0.4 "           // Software version
 
 // Global defs
 const bool USE_90_ON_STARTUP = true;  
