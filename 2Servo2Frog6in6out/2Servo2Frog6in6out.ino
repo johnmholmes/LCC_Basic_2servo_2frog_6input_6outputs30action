@@ -120,7 +120,9 @@ uint8_t servoActual[NUM_SERVOS];
 uint8_t servoTarget[NUM_SERVOS];
 uint8_t servopin[]  = { SERVOPINS };
 
-const uint32_t SERVO_DELAY_OFFSET = 48; 
+// const uint32_t SERVO_DELAY_OFFSET = 48; 
+// Delete the hardcoded 48, and let the compiler grab it dynamically:
+#define SERVO_DELAY_OFFSET  EEADDR(servodelay)
 bool posdirty = false;
 
 // FORWARD DECLARATION: Tells compiler servoSet() exists further down
@@ -268,11 +270,15 @@ void servoBackgroundTask(void * parameter) {
         }
       }
 
-      // Midpoint boundary edge trigger detection
+      // Midpoint boundary edge trigger detection (Direction-Independent Fix)
       if (servoMoving[i] && !midCrossed[i]) {
-        if (servoTarget[i] > oldActual) { 
-          // Moving Midpoint -> THROWN
-          if (oldActual < midAngle && servoActual[i] >= midAngle) {
+        
+        if (curpos[i] == 2) { 
+          // LOGICAL INTENT: Moving toward THROWN
+          // Trigger when crossing the midpoint, whether the angle is rising OR falling
+          if ((oldActual < midAngle && servoActual[i] >= midAngle) || 
+              (oldActual > midAngle && servoActual[i] <= midAngle)) {
+             
              midCrossed[i] = true;
              
              digitalWrite(frogPins[i], HIGH); // Flip Frog Relay output to HIGH
@@ -281,9 +287,12 @@ void servoBackgroundTask(void * parameter) {
              OpenLcb.produce(targetIndex);
           }
         }
-        else if (servoTarget[i] < oldActual) {
-          // Moving Midpoint -> CLOSED
-          if (oldActual > midAngle && servoActual[i] <= midAngle) {
+        else if (curpos[i] == 0) {
+          // LOGICAL INTENT: Moving toward CLOSED
+          // Trigger when crossing the midpoint, whether the angle is rising OR falling
+          if ((oldActual > midAngle && servoActual[i] <= midAngle) || 
+              (oldActual < midAngle && servoActual[i] >= midAngle)) {
+             
              midCrossed[i] = true;
              
              digitalWrite(frogPins[i], LOW);  // Flip Frog Relay output to LOW

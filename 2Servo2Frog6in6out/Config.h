@@ -19,9 +19,9 @@
 
 // Board definitions
 #define MANU " OpenLCB "              // The manufacturer of node
-#define MODEL BOARD " 2Servo "        // The default model of the board
+#define MODEL BOARD " 2Servo6in6out "        // The default model of the board
 #define HWVERSION " ESP 1 Basic "     // Hardware version
-#define SWVERSION " 1.0.2 "           // Software version
+#define SWVERSION " 1.0.1 "           // Software version
 
 // Global defs
 const bool USE_90_ON_STARTUP = true;  
