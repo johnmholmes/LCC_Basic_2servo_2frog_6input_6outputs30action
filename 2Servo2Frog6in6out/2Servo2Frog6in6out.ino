@@ -67,13 +67,27 @@ const char configDefInfo[] PROGMEM =
             <description>Select how physical pin changes trigger the Event IDs.</description>
             <min>0</min><max>1</max>
             <map>
-                <relation><property>0</property><value>Direct State Tracking (Momentary/Toggle Sw)</value></relation>
-                <relation><property>1</property><value>Pushbutton Toggle Algorithm</value></relation>
+                <relation><property>0</property><value>Direct State Tracking (Sensor / Switch)</value></relation>
+                <relation><property>1</property><value>Pushbutton Toggle State Change</value></relation>
             </map>
         </int>
 
-        <eventid><name>Input Transited HIGH Event (or Toggle OFF)</name></eventid>
-        <eventid><name>Input Transited LOW Event (or Toggle ON)</name></eventid>
+        <int size='1'>
+          <name>On-Delay / Transit LOW (0 to 25.5 seconds)</name>
+          <description>Value multiplied by 100ms. Time signal must stay LOW before event transmits.</description>
+          <min>0</min><max>255</max>
+          <hints><slider tickSpacing='65' immediate='yes' showValue='yes'> </slider></hints>
+        </int>
+
+        <int size='1'>
+          <name>Off-Delay / Transit HIGH (0 to 25.5 seconds)</name>
+          <description>Value multiplied by 100ms. Time signal must stay HIGH before event transmits.</description>
+          <min>0</min><max>255</max>
+          <hints><slider tickSpacing='65' immediate='yes' showValue='yes'> </slider></hints>
+        </int>
+
+        <eventid><name>Input Transited HIGH Event </name></eventid>
+        <eventid><name>Input Transited LOW Event </name></eventid>
     </group>
     )" CDIfooter;
 } 
@@ -102,7 +116,9 @@ typedef struct {
       // Input structures mapped following the Servos segment
       struct {
         char desc[24]; 
-        uint8_t mode; // 0 = Direct State, 1 = Pushbutton Toggle Algorithm
+        uint8_t mode;     // 0 = Direct State, 1 = Pushbutton Toggle Algorithm
+        uint8_t onDelay;  // Time multiplier (*100ms) to delay execution of Low/On state transition
+        uint8_t offDelay; // Time multiplier (*100ms) to delay execution of High/Off state transition
         EventID highStateEid;
         EventID lowStateEid;
       } inputs[NUM_INPUTS];
@@ -119,7 +135,11 @@ bool midCrossed[NUM_SERVOS] = {false, false};
 
 // Track physical inputs and virtual states
 bool lastInputState[NUM_INPUTS] = {HIGH, HIGH, HIGH, HIGH, HIGH, HIGH};
+bool stableInputState[NUM_INPUTS] = {HIGH, HIGH, HIGH, HIGH, HIGH, HIGH}; // Output state after delay timers complete
 bool virtualToggleState[NUM_INPUTS] = {false, false, false, false, false, false}; 
+
+// Countdown timer values tracking (measured in 100ms increments)
+uint32_t inputTimer[NUM_INPUTS] = {0, 0, 0, 0, 0, 0};
 
 // Array to easily map hardware frog pins to loop index tracking
 const uint8_t frogPins[NUM_SERVOS] = { FROG_PIN_0, FROG_PIN_1 };
@@ -175,7 +195,7 @@ bool posdirty = false;
 void servoSet(); 
 
 void reportConfig() {
-  dP("\n 2Servo Turnout with Frog Midpoint Events and 6 Configurable Inputs");
+  dP("\n 2Servo Turnout with Frog Midpoint Events and 6 Advanced Timed Inputs");
   dP("\nFile: " __FILE__);
   dP("\nUsing " BOARD);
   dP("\nNode ID="); dP(TOSTRING((NODE_ADDRESS)));
@@ -198,10 +218,12 @@ void userInitAll()
     }
   }
 
-  // Clear input settings in EEPROM
+  // Clear input settings and delay configurations in EEPROM
   for(uint8_t i = 0; i < NUM_INPUTS; i++) {
     NODECONFIG.put(EEADDR(inputs[i].desc), ESTRING(""));
-    NODECONFIG.update(EEADDR(inputs[i].mode), 0); // Default mode: Direct tracking
+    NODECONFIG.update(EEADDR(inputs[i].mode), 0);     // Default mode: Direct tracking
+    NODECONFIG.update(EEADDR(inputs[i].onDelay), 0);  // Default: Instant transmission
+    NODECONFIG.update(EEADDR(inputs[i].offDelay), 0); // Default: Instant transmission
   }
   
   EEPROMcommit;
@@ -232,9 +254,10 @@ uint8_t userState(uint16_t index) {
         uint8_t operationalMode = NODECONFIG.read(EEADDR(inputs[inputIdx].mode));
 
         if (operationalMode == 0) {
-            bool reading = digitalRead(inputPins[inputIdx]);
-            if (stateType == 0 && reading == HIGH) return VALID;
-            if (stateType == 1 && reading == LOW) return VALID;
+            // Evaluate evaluated/debounced stable internal state instead of physical volatile pin
+            bool trackingState = stableInputState[inputIdx];
+            if (stateType == 0 && trackingState == HIGH) return VALID;
+            if (stateType == 1 && trackingState == LOW) return VALID;
         } else {
             bool trackingState = virtualToggleState[inputIdx];
             if (stateType == 0 && trackingState == false) return VALID; 
@@ -383,40 +406,111 @@ void servoBackgroundTask(void * parameter) {
   }
 }
 
-// Background task checking hardware pullups & handling chosen operating algorithm
+// Background task checking hardware pullups & handling chosen operating algorithm with non-blocking timers
+// Background task checking hardware pullups & handling chosen operating algorithm with non-blocking timers
 void inputBackgroundTask(void * parameter) {
   for(;;) {
-    vTaskDelay(pdMS_TO_TICKS(30)); 
+    vTaskDelay(pdMS_TO_TICKS(100)); // 100ms base slice loop clock
     
     for(int i = 0; i < NUM_INPUTS; i++) {
-      bool currentState = digitalRead(inputPins[i]);
-      
-      if(currentState != lastInputState[i]) {
-        lastInputState[i] = currentState;
-        
-        uint8_t operationalMode = NODECONFIG.read(EEADDR(inputs[i].mode));
-        uint16_t inputBaseIndex = (NUM_SERVOS * 7) + (i * 2);
+      bool currentReading = digitalRead(inputPins[i]);
+      uint8_t operationalMode = NODECONFIG.read(EEADDR(inputs[i].mode));
+      uint16_t inputBaseIndex = (NUM_SERVOS * 7) + (i * 2);
 
-        if (operationalMode == 0) {
-          if(currentState == HIGH) {
-            OpenLcb.produce(inputBaseIndex); 
-            dP("\n Input #"); dP(i); dP(" Direct Mode -> HIGH");
-          } else {
-            OpenLcb.produce(inputBaseIndex + 1); 
-            dP("\n Input #"); dP(i); dP(" Direct Mode -> LOW");
+      if (operationalMode == 0) {
+        // ================= MODE 0: DIRECT STATE TRACKING WITH ON/OFF DELAYS =================
+        if (currentReading != lastInputState[i]) {
+          // Hardware pin moved! Begin countdown tracking phase
+          lastInputState[i] = currentReading;
+          
+          uint8_t configurationDelay = (currentReading == LOW) ? 
+                                       NODECONFIG.read(EEADDR(inputs[i].onDelay)) : 
+                                       NODECONFIG.read(EEADDR(inputs[i].offDelay));
+                                       
+          inputTimer[i] = configurationDelay; 
+        } 
+        else if (currentReading != stableInputState[i]) {
+          // Hardware pin matches its raw target, but differs from our confirmed layout position
+          if (inputTimer[i] > 0) {
+            inputTimer[i]--; // Tick down the remaining slices
+          }
+          
+          // Timer expired! The signal has remained stable long enough to broadcast
+          if (inputTimer[i] == 0) {
+            stableInputState[i] = currentReading; 
+            
+            if (stableInputState[i] == HIGH) {
+              OpenLcb.produce(inputBaseIndex); // Transmit High State Event
+              dP("\n Input #"); dP(i); dP(" Delayed Direct -> HIGH");
+            } else {
+              OpenLcb.produce(inputBaseIndex + 1); // Transmit Low State Event
+              dP("\n Input #"); dP(i); dP(" Delayed Direct -> LOW");
+            }
+          }
+        }
+      } 
+      else {
+        // ================= MODE 1: PUSHBUTTON TOGGLE ALGORITHM WITH DELAYS =================
+        if (currentReading != lastInputState[i]) {
+          lastInputState[i] = currentReading;
+          
+          if (currentReading == LOW) {
+            // Button pressed down: initialize validation timer using the On-Delay setting
+            uint8_t valDelay = NODECONFIG.read(EEADDR(inputs[i].onDelay));
+            inputTimer[i] = valDelay;
+            
+            // If On-Delay is 0, process the click instantly
+            if (valDelay == 0 && stableInputState[i] == HIGH) {
+              stableInputState[i] = LOW; // Mark button action as pending/acknowledged
+              virtualToggleState[i] = !virtualToggleState[i];
+              
+              if (virtualToggleState[i] == true) {
+                OpenLcb.produce(inputBaseIndex + 1); // Virtual ON
+                dP("\n Input #"); dP(i); dP(" Toggle -> Instant Virtual ON");
+              } else {
+                OpenLcb.produce(inputBaseIndex); // Virtual OFF
+                dP("\n Input #"); dP(i); dP(" Toggle -> Instant Virtual OFF");
+              }
+              // Set the Off-Delay value as a debounce lockout time window
+              inputTimer[i] = NODECONFIG.read(EEADDR(inputs[i].offDelay));
+            }
+          } 
+          else {
+            // Button was released (went HIGH)
+            if (stableInputState[i] == LOW) {
+              // Button was previously validated, now resetting its waiting state
+              stableInputState[i] = HIGH;
+            } else {
+              // Button released BEFORE the On-Delay expired; clear timer to reset and ignore the press
+              inputTimer[i] = 0;
+            }
           }
         } 
-        else {
-          if(currentState == LOW) {
-            virtualToggleState[i] = !virtualToggleState[i]; 
+        else if (currentReading == LOW && stableInputState[i] == HIGH) {
+          // Button is being actively held down, waiting for confirmation
+          if (inputTimer[i] > 0) {
+            inputTimer[i]--;
+          }
+          
+          if (inputTimer[i] == 0) {
+            stableInputState[i] = LOW; // Lock out further evaluation until they release the switch
+            virtualToggleState[i] = !virtualToggleState[i];
             
-            if(virtualToggleState[i] == true) {
-              OpenLcb.produce(inputBaseIndex + 1); 
-              dP("\n Input #"); dP(i); dP(" Toggle Mode -> Virtual ON");
+            if (virtualToggleState[i] == true) {
+              OpenLcb.produce(inputBaseIndex + 1); // Virtual ON
+              dP("\n Input #"); dP(i); dP(" Toggle -> Delayed Virtual ON");
             } else {
-              OpenLcb.produce(inputBaseIndex); 
-              dP("\n Input #"); dP(i); dP(" Toggle Mode -> Virtual OFF");
+              OpenLcb.produce(inputBaseIndex); // Virtual OFF
+              dP("\n Input #"); dP(i); dP(" Toggle -> Delayed Virtual OFF");
             }
+            // Transition immediately into a button-debounce lockout window using the Off-Delay
+            inputTimer[i] = NODECONFIG.read(EEADDR(inputs[i].offDelay));
+          }
+        }
+        else {
+          // Button is idle or in post-click lockout; process countdown ticks
+          if (inputTimer[i] > 0) {
+            inputTimer[i]--;
           }
         }
       }
@@ -461,6 +555,7 @@ void setup()
   for(int i = 0; i < NUM_INPUTS; i++) {
     pinMode(inputPins[i], INPUT_PULLUP);
     lastInputState[i] = digitalRead(inputPins[i]); 
+    stableInputState[i] = lastInputState[i];
   }
 
   EEPROMbegin;
@@ -481,7 +576,7 @@ void setup()
     0                      
   );
 
-  // Dedicated Core 0 Task to monitor physical logic switches
+  // Dedicated Core 0 Task to monitor physical logic switches with delays
   xTaskCreatePinnedToCore(
     inputBackgroundTask,   
     "InputTask",           
