@@ -24,7 +24,7 @@
 */
 #define NUM_SERVOS 2
 #define NUM_POS    3  
-#define NUM_EVENT  26  // 2servo * 3 positions + 4 events per servo * 2 + 12 input
+#define NUM_EVENT  56  
 
 // Board definitions
 #define MANU " OpenLCB "              // The manufacturer of node
