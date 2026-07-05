@@ -7,6 +7,12 @@
 // To Force Reset EEPROM to Factory Defaults set this value to 1, else 0.
 #define RESET_TO_FACTORY_DEFAULTS 1
 
+/*
+  ======================================================================================
+    End of end user configurations Changing anything below this will break the sketch.
+  ======================================================================================
+*/
+
 // Choose a board, uncomment one line, see boards.h
 #define ESP32_BOARD
 
