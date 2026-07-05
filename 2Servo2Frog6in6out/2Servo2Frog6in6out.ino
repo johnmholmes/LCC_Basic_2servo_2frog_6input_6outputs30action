@@ -1,11 +1,11 @@
 /*
 ==============================================================
- Built from the AVR 2Servos NIO using ESPcan
+   Built from the AVR 2Servos NIO using ESPcan
 
- Coprright 2024 David P Harris
- derived from work by Alex Shepherd and David Harris
- Updated 2026 June David P Harris & John holmes
- Updated 2026 5th July John Holmes
+   Coprright 2024 David P Harris
+   derived from work by Alex Shepherd and David Harris
+   Updated 2026 June David P Harris & John holmes
+   Updated 2026 5th July John Holmes
 ==============================================================
 */
 
