@@ -7,6 +7,12 @@
 // To Force Reset EEPROM to Factory Defaults set this value to 1, else 0.
 #define RESET_TO_FACTORY_DEFAULTS 1
 
+/*
+  ======================================================================================
+    End of end user configurations Changing anything below this will break the sketch.
+  ======================================================================================
+*/
+
 // Choose a board, uncomment one line, see boards.h
 #define ESP32_BOARD
 
@@ -18,7 +24,7 @@
 */
 #define NUM_SERVOS 2
 #define NUM_POS    3  
-#define NUM_EVENT  26  // 2servo * 3 positions + 4 events per servo * 2 + 12 input
+#define NUM_EVENT  56  
 
 // Board definitions
 #define MANU " OpenLCB "              // The manufacturer of node
