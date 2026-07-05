@@ -1,3 +1,22 @@
+/*
+==============================================================
+ Built from the AVR 2Servos NIO using ESPcan
+
+ Coprright 2024 David P Harris
+ derived from work by Alex Shepherd and David Harris
+ Updated 2026 June David P Harris & John holmes
+ Updated 2026 5th July John Holmes
+==============================================================
+*/
+
+/*
+    Board Manager used for testing ESP32 by Espressif version 3.3.10
+    Third party Libraries required to be installed.
+    You need to have the OpenLCB_Single_Thread Library Version 0.1.19 
+    ESP32Servo.h needs to be installed from the Arduino Library Manager version 3.2.1
+    ACAN_ESP32 3.0.3
+*/
+
 #include "Config.h"   // Contains configuration, see "Config.h"
 #include "Boards.h"   // Contains Board definitions, see "Boards.h"
 #include "mdebugging.h"           // debugging
