@@ -28,6 +28,15 @@ MERG members numbers https://www.youtube.com/watch?v=gfhzXwfs-f8
 /* Debugging -- uncomment to activate debugging statements: */
 //#define DEBUG Serial
 
+// For standalone use so no Can bus netwrok comminication between nodes.
+//#define USEGCSERIAL
+//#define NOCAN
+
+#ifdef USEGCSERIAL
+  #include "GCSerial.h"
+  #undef DEBUG           // Cannot use DEBUG when using GCSerial
+#endif
+
 /*
   Altering the number of servos require changes made to the Boards.h for pin allocations.
 */
@@ -36,10 +45,10 @@ MERG members numbers https://www.youtube.com/watch?v=gfhzXwfs-f8
 #define NUM_EVENT  56  
 
 // Board definitions
-#define MANU " OpenLCB "              // The manufacturer of node
-#define MODEL BOARD " 2Servo6in6out "        // The default model of the board
-#define HWVERSION " ESP 1 Basic "     // Hardware version
-#define SWVERSION " 1.0.8 "           // Software version
+#define MANU " OpenLCB "                 // The manufacturer of node
+#define MODEL BOARD " 2Servo6in6out "    // The default model of the board
+#define HWVERSION " ESP 1 Basic "        // Hardware version
+#define SWVERSION " 1.0.8 "              // Software version
 
 // Global defs
 const bool USE_90_ON_STARTUP = true;  
