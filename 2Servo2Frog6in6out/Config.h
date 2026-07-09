@@ -2,10 +2,19 @@
 #define CONFIG_H
 
 // To set a new nodeid edit the next line
-#define NODE_ADDRESS  0x05,0x01,0x01,0x01,0x8E,0x04  // must be unique from an address space owned by you or DIY
+#define NODE_ADDRESS  0x05,0x01,0x01,0x01,0x8E,0x04  // must be unique from an address space owned by you for DIY use.
 
 // To Force Reset EEPROM to Factory Defaults set this value to 1, else 0.
 #define RESET_TO_FACTORY_DEFAULTS 1
+
+/*
+There are tow videos showing the ways to get hold of Node Id ranges.
+
+Personal numbers https://www.youtube.com/watch?v=B7yfHWAk7_U 
+
+MERG members numbers https://www.youtube.com/watch?v=gfhzXwfs-f8
+
+*/
 
 /*
   ======================================================================================
@@ -30,7 +39,7 @@
 #define MANU " OpenLCB "              // The manufacturer of node
 #define MODEL BOARD " 2Servo6in6out "        // The default model of the board
 #define HWVERSION " ESP 1 Basic "     // Hardware version
-#define SWVERSION " 1.0.7 "           // Software version
+#define SWVERSION " 1.0.8 "           // Software version
 
 // Global defs
 const bool USE_90_ON_STARTUP = true;  
