@@ -661,15 +661,31 @@ case 5: // Mode: Organic Random Flicker (Welding / Fire Simulator)
 
 void servoStartUp() {
   for(int i=0; i<NUM_SERVOS; i++) {
-    curpos[i] = 0; 
-    digitalWrite(frogPins[i], LOW);
-    servoActual[i] = NODECONFIG.read( EEADDR( servos[i].pos[curpos[i]].angle ) );
+    curpos[i] = 0; // Target is position 0 (Closed)
+    digitalWrite(frogPins[i], LOW); // Setup default frog relay orientation
+    
+    // 1. Force the physical starting position tracking to 90 degrees
+    servoActual[i] = 90;
+    delay(500);
+    
+    // 2. Read what the actual intended Target angle is for position 0 (Closed)
+    servoTarget[i] = NODECONFIG.read( EEADDR( servos[i].pos[curpos[i]].angle ) );
+    
+    // 3. Attach the pin and command an immediate sweep to the 90-degree reference point
     servo[i].attach(servopin[i]);
     servo[i].write(servoActual[i]);
-    servoMoving[i] = false; 
+    
+    // 4. Prime the background task flags to sweep from 90 to target using the slider's speed rate
+    if (servoTarget[i] != servoActual[i]) {
+      servoMoving[i] = true;
+    } else {
+      servoMoving[i] = false; 
+    }
     midCrossed[i] = false;
-    delay(100);
+    
+    delay(100); // Small pause for electrical stability during power-up sequence
   }
+  // Synchronizes targets cleanly across execution memory blocks
   servoSet();
 }
 
