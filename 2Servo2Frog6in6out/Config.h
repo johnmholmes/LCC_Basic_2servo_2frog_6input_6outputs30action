@@ -8,7 +8,7 @@
 #define RESET_TO_FACTORY_DEFAULTS 1
 
 /*
-There are tow videos showing the ways to get hold of Node Id ranges.
+There are two videos showing the ways to get hold of Node Id ranges.
 
 Personal numbers https://www.youtube.com/watch?v=B7yfHWAk7_U 
 
